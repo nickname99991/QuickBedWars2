@@ -22,40 +22,59 @@ jobs:
           wget -q https://services.gradle.org/distributions/gradle-2.14.1-bin.zip
           unzip -q gradle-2.14.1-bin.zip
 
-      - name: Extract project
+      - name: Find and Extract Project
         run: |
           mkdir project
-          unzip -q QuickBedWars-Forge1.8.9.zip -d project
+
+          ZIP=$(find . -maxdepth 2 -type f -name "*.zip" ! -name "gradle-2.14.1-bin.zip" -print -quit)
+
+          if [ -z "$ZIP" ]; then
+            echo "No project ZIP found!"
+            find . -maxdepth 3 -type f | sort
+            exit 1
+          fi
+
+          echo "Using ZIP: $ZIP"
+          unzip -q "$ZIP" -d project
 
       - name: Fix ClientRegistry
         run: |
           FILE=$(find project -name QuickBedWars.java -print -quit)
 
           if [ -z "$FILE" ]; then
-            echo "QuickBedWars.java not found"
+            echo "QuickBedWars.java not found!"
+            find project -type f | sort
             exit 1
           fi
 
+          echo "Found Java file: $FILE"
+
           sed -i 's/import net.minecraftforge.client.ClientRegistry;/import net.minecraftforge.fml.client.registry.ClientRegistry;/' "$FILE"
 
-      - name: Find project
+          echo "ClientRegistry import:"
+          grep "ClientRegistry" "$FILE"
+
+      - name: Find Gradle Project
         run: |
           BUILD_FILE=$(find project -name build.gradle -print -quit)
 
           if [ -z "$BUILD_FILE" ]; then
-            echo "build.gradle not found"
+            echo "build.gradle not found!"
+            find project -type f | sort
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$BUILD_FILE")
+
+          echo "Project directory: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Build
+      - name: Build Mod
         run: |
           cd "$PROJECT_DIR"
           "$GITHUB_WORKSPACE/gradle-2.14.1/bin/gradle" build --no-daemon
 
-      - name: Find JAR
+      - name: Find Built JAR
         run: |
           JAR=$(find project -path "*/build/libs/*.jar" \
             ! -name "*sources*" \
@@ -63,13 +82,21 @@ jobs:
             -print -quit)
 
           if [ -z "$JAR" ]; then
-            echo "JAR not found"
+            echo "JAR not found!"
+
+            echo "===== ALL JAR FILES ====="
+            find project -type f -name "*.jar" | sort
+
+            echo "===== BUILD DIRECTORIES ====="
+            find project -type d -name build | sort
+
             exit 1
           fi
 
+          echo "Found JAR: $JAR"
           cp "$JAR" QuickBedWars.jar
 
-      - name: Upload JAR
+      - name: Upload Mod
         uses: actions/upload-artifact@v4
         with:
           name: QuickBedWars
