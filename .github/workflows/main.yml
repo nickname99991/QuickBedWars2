@@ -15,58 +15,68 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '8'
+          java-version: "8"
 
       - name: Download Gradle
         run: |
           wget -q https://services.gradle.org/distributions/gradle-2.14.1-bin.zip
           unzip -q gradle-2.14.1-bin.zip
 
-      - name: Find and Extract Project
+      - name: Find Project ZIP
         run: |
-          mkdir project
+          echo "===== ZIP FILES ====="
+          find . -type f -name "*.zip" ! -name "gradle-2.14.1-bin.zip" -print
 
-          ZIP=$(find . -maxdepth 2 -type f -name "*.zip" ! -name "gradle-2.14.1-bin.zip" -print -quit)
+          ZIP=$(find . -type f -name "*.zip" ! -name "gradle-2.14.1-bin.zip" -print -quit)
 
           if [ -z "$ZIP" ]; then
-            echo "No project ZIP found!"
-            find . -maxdepth 3 -type f | sort
+            echo "ERROR: Project ZIP not found!"
             exit 1
           fi
 
-          echo "Using ZIP: $ZIP"
+          echo "Using project ZIP: $ZIP"
+          echo "ZIP=$ZIP" >> "$GITHUB_ENV"
+
+      - name: Extract Project
+        run: |
+          rm -rf project
+          mkdir project
           unzip -q "$ZIP" -d project
+
+          echo "===== PROJECT FILES ====="
+          find project -maxdepth 5 -type f | sort
+
+      - name: Find Java File
+        run: |
+          FILE=$(find project -name "QuickBedWars.java" -print -quit)
+
+          if [ -z "$FILE" ]; then
+            echo "ERROR: QuickBedWars.java not found!"
+            exit 1
+          fi
+
+          echo "Java file: $FILE"
+          echo "JAVA_FILE=$FILE" >> "$GITHUB_ENV"
 
       - name: Fix ClientRegistry
         run: |
-          FILE=$(find project -name QuickBedWars.java -print -quit)
+          sed -i 's/import net.minecraftforge.client.ClientRegistry;/import net.minecraftforge.fml.client.registry.ClientRegistry;/' "$JAVA_FILE"
 
-          if [ -z "$FILE" ]; then
-            echo "QuickBedWars.java not found!"
-            find project -type f | sort
-            exit 1
-          fi
-
-          echo "Found Java file: $FILE"
-
-          sed -i 's/import net.minecraftforge.client.ClientRegistry;/import net.minecraftforge.fml.client.registry.ClientRegistry;/' "$FILE"
-
-          echo "ClientRegistry import:"
-          grep "ClientRegistry" "$FILE"
+          echo "===== CHECKING IMPORT ====="
+          grep "ClientRegistry" "$JAVA_FILE"
 
       - name: Find Gradle Project
         run: |
-          BUILD_FILE=$(find project -name build.gradle -print -quit)
+          BUILD_FILE=$(find project -name "build.gradle" -print -quit)
 
           if [ -z "$BUILD_FILE" ]; then
-            echo "build.gradle not found!"
-            find project -type f | sort
+            echo "ERROR: build.gradle not found!"
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$BUILD_FILE")
 
-          echo "Project directory: $PROJECT_DIR"
+          echo "Gradle project: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Build Mod
@@ -74,26 +84,25 @@ jobs:
           cd "$PROJECT_DIR"
           "$GITHUB_WORKSPACE/gradle-2.14.1/bin/gradle" build --no-daemon
 
-      - name: Find Built JAR
+      - name: Find Mod JAR
         run: |
-          JAR=$(find project -path "*/build/libs/*.jar" \
+          echo "===== SEARCHING FOR MOD JAR ====="
+
+          JAR=$(find project -type f -path "*/build/libs/*.jar" \
             ! -name "*sources*" \
             ! -name "*dev*" \
             -print -quit)
 
           if [ -z "$JAR" ]; then
-            echo "JAR not found!"
+            echo "ERROR: Mod JAR not found!"
 
-            echo "===== ALL JAR FILES ====="
+            echo "===== ALL JARS ====="
             find project -type f -name "*.jar" | sort
-
-            echo "===== BUILD DIRECTORIES ====="
-            find project -type d -name build | sort
 
             exit 1
           fi
 
-          echo "Found JAR: $JAR"
+          echo "Mod JAR found: $JAR"
           cp "$JAR" QuickBedWars.jar
 
       - name: Upload Mod
@@ -101,3 +110,4 @@ jobs:
         with:
           name: QuickBedWars
           path: QuickBedWars.jar
+          if-no-files-found: error
